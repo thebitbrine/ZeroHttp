@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using ZeroHttp;
 using ZeroHttp.Http2;
 
-class Program
+class Examples
 {
     static async Task Main(string[] args)
     {
