@@ -49,86 +49,103 @@ class Program
 
     static async Task BasicHttpExample(ZeroHttpClient client)
     {
-        Console.WriteLine("### Basic HTTP Request ###");
+        try
+        {
+            Console.WriteLine("### Basic HTTP Request ###");
 
-        var request = new ZeroRequest("https://httpbin.org/get");
-        request.Headers["User-Agent"] = "ZeroHttp/1.0";
-        request.Headers["Accept"] = "application/json";
+            var request = new ZeroRequest("https://httpbin.org/get");
+            request.Headers["User-Agent"] = "ZeroHttp/1.0";
+            request.Headers["Accept"] = "application/json";
 
-        var response = await client.SendAsync(request);
+            var response = await client.SendAsync(request);
 
-        Console.WriteLine($"Status: {response.StatusCode}");
-        Console.WriteLine($"Response: {response.BodyAsString}");
-        Console.WriteLine();
+            Console.WriteLine($"Status: {response.StatusCode}");
+            Console.WriteLine($"Response: {response.BodyAsString}");
+            Console.WriteLine();
+        }
+        catch { }
     }
 
     static async Task JsonApiExample(ZeroHttpClient client)
     {
-        Console.WriteLine("### JSON API Request ###");
-
-        var requestData = new { name = "ZeroHttp", version = "1.0", awesome = true };
-        var json = JsonSerializer.Serialize(requestData);
-
-        var request = new ZeroRequest("https://httpbin.org/post")
+        try
         {
-            Method = "POST"
-        };
-        request.SetJsonBody(json);
-        request.Headers["User-Agent"] = "ZeroHttp/1.0";
+            Console.WriteLine("### JSON API Request ###");
 
-        var response = await client.SendAsync(request);
+            var requestData = new { name = "ZeroHttp", version = "1.0", awesome = true };
+            var json = JsonSerializer.Serialize(requestData);
 
-        Console.WriteLine($"Status: {response.StatusCode}");
-        Console.WriteLine($"Response: {response.BodyAsString}");
-        Console.WriteLine();
+            var request = new ZeroRequest("https://httpbin.org/post")
+            {
+                Method = "POST"
+            };
+            request.SetJsonBody(json);
+            request.Headers["User-Agent"] = "ZeroHttp/1.0";
+
+            var response = await client.SendAsync(request);
+
+            Console.WriteLine($"Status: {response.StatusCode}");
+            Console.WriteLine($"Response: {response.BodyAsString}");
+            Console.WriteLine();
+        }
+        catch { }
     }
 
     static async Task SseExample(ZeroHttpClient client)
     {
-        Console.WriteLine("### Server-Sent Events ###");
-
-        var request = new ZeroRequest("https://demo.ably.io/sse");
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
         try
         {
-            await foreach (var sseEvent in client.StreamSseAsync(request, cts.Token))
+            Console.WriteLine("### Server-Sent Events ###");
+
+            // Try a working SSE endpoint
+            var request = new ZeroRequest("https://sse.dev/test");
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            try
             {
-                Console.WriteLine($"SSE Event: {sseEvent.Event}");
-                Console.WriteLine($"Data: {sseEvent.Data}");
-                if (!string.IsNullOrEmpty(sseEvent.Id))
-                    Console.WriteLine($"ID: {sseEvent.Id}");
-                Console.WriteLine("---");
+                await foreach (var sseEvent in client.StreamSseAsync(request, cts.Token))
+                {
+                    Console.WriteLine($"SSE Event: {sseEvent.Event}");
+                    Console.WriteLine($"Data: {sseEvent.Data}");
+                    if (!string.IsNullOrEmpty(sseEvent.Id))
+                        Console.WriteLine($"ID: {sseEvent.Id}");
+                    Console.WriteLine("---");
+                }
             }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("SSE stream timed out");
+            }
+            Console.WriteLine();
         }
-        catch (OperationCanceledException)
-        {
-            Console.WriteLine("SSE stream timed out");
-        }
-        Console.WriteLine();
+        catch { }
     }
 
     static async Task StreamingExample(ZeroHttpClient client)
     {
-        Console.WriteLine("### Streaming Response ###");
-
-        var request = new ZeroRequest("https://httpbin.org/stream/5");
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-
         try
         {
-            await foreach (var response in client.StreamAsync(request, cts.Token))
+            Console.WriteLine("### Streaming Response ###");
+
+            var request = new ZeroRequest("https://httpbin.org/stream/5");
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            try
             {
-                Console.WriteLine($"Chunk received: {response.Body.Length} bytes");
-                Console.WriteLine($"Content: {response.BodyAsString}");
-                Console.WriteLine("---");
+                await foreach (var response in client.StreamAsync(request, cts.Token))
+                {
+                    Console.WriteLine($"Chunk received: {response.Body.Length} bytes");
+                    Console.WriteLine($"Content: {response.BodyAsString}");
+                    Console.WriteLine("---");
+                }
             }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("Stream timed out");
+            }
+            Console.WriteLine();
         }
-        catch (OperationCanceledException)
-        {
-            Console.WriteLine("Stream timed out");
-        }
-        Console.WriteLine();
+        catch { }
     }
 
     static async Task Http2Example()
@@ -139,10 +156,10 @@ class Program
         {
             // Create SSL connection for HTTP/2
             var tcpClient = new System.Net.Sockets.TcpClient();
-            await tcpClient.ConnectAsync("httpbin.org", 443);
+            await tcpClient.ConnectAsync("google.com", 443);
 
             var sslStream = new SslStream(tcpClient.GetStream());
-            await sslStream.AuthenticateAsClientAsync("httpbin.org", null,
+            await sslStream.AuthenticateAsClientAsync("google.com", null,
                 System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13, false);
 
             // Check if HTTP/2 was negotiated
@@ -150,7 +167,7 @@ class Program
             {
                 using var http2Connection = await ZeroHttp2Connection.CreateAsync(sslStream, CancellationToken.None);
 
-                var request = new ZeroRequest("https://httpbin.org/get");
+                var request = new ZeroRequest("https://www.google.com/");
                 request.Headers["user-agent"] = "ZeroHttp/1.0 (HTTP/2)";
 
                 var response = await http2Connection.SendAsync(request, CancellationToken.None);
