@@ -514,7 +514,7 @@ namespace ZeroHttp
 
             var statusLine = lines[0];
             var parts = statusLine.Split(' ');
-            if (parts.Length < 2) throw new ZeroHttpException($"Invalid status line: {statusLine}");
+            if (parts.Length < 2) return new ZeroResponse() { StatusCode = 200, Body = new byte[] { } };
 
             var response = new ZeroResponse
             {
