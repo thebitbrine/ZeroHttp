@@ -151,10 +151,15 @@ using var client = new ZeroHttpClient(options);
 ## Performance
 
 **Connection Reuse**: Automatic connection pooling with configurable limits
+
 **Memory**: Streaming responses use minimal memory regardless of size
+
 **Concurrency**: Handles thousands of concurrent connections
+
 **HTTP/2**: Full multiplexing support for parallel streams
+
 **Allocation**: ArrayPool usage for reduced GC pressure
+
 
 ## Error Handling
 
