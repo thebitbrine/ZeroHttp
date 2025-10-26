@@ -23,7 +23,7 @@ namespace ZeroHttp.Http2
         private int _nextStreamId = 1;
         private readonly CancellationTokenSource _connectionCts;
 
-        public ZeroHttp2Connection(SslStream sslStream)
+        private ZeroHttp2Connection(SslStream sslStream)
         {
             _stream = sslStream;
             _streams = new ConcurrentDictionary<int, ZeroHttp2Stream>();
@@ -32,8 +32,10 @@ namespace ZeroHttp.Http2
             _remoteSettings = ZeroHttp2Settings.Default();
             _hpack = new ZeroHpack();
             _connectionCts = new CancellationTokenSource();
+        }
 
-            // Start reading frames
+        private void StartFrameReader()
+        {
             _ = Task.Run(ReadFramesAsync);
         }
 
@@ -46,6 +48,9 @@ namespace ZeroHttp.Http2
             // Send initial SETTINGS frame
             var connection = new ZeroHttp2Connection(sslStream);
             await connection.SendSettingsAsync(cancellationToken);
+
+            // Start reading frames after handshake
+            connection.StartFrameReader();
 
             return connection;
         }
@@ -146,10 +151,22 @@ namespace ZeroHttp.Http2
                     await HandleSettingsFrameAsync(frame);
                     break;
                 case Http2FrameType.Headers:
-                case Http2FrameType.Data:
                 case Http2FrameType.RstStream:
                     if (_streams.TryGetValue(frame.StreamId, out var stream))
                         stream.HandleFrame(frame);
+                    break;
+                case Http2FrameType.Data:
+                    if (_streams.TryGetValue(frame.StreamId, out var dataStream))
+                    {
+                        dataStream.HandleFrame(frame);
+
+                        // Send WINDOW_UPDATE for flow control
+                        if (frame.Length > 0)
+                        {
+                            await SendWindowUpdateAsync(frame.StreamId, frame.Length);
+                            await SendWindowUpdateAsync(0, frame.Length); // Connection-level window update
+                        }
+                    }
                     break;
                 case Http2FrameType.Ping:
                     await HandlePingFrameAsync(frame);
@@ -157,6 +174,9 @@ namespace ZeroHttp.Http2
                 case Http2FrameType.GoAway:
                     // Connection is closing
                     _connectionCts.Cancel();
+                    break;
+                case Http2FrameType.WindowUpdate:
+                    // Ignore for now - we don't send large bodies in this implementation
                     break;
             }
         }
@@ -193,6 +213,25 @@ namespace ZeroHttp.Http2
             };
 
             await SendFrameAsync(ack, CancellationToken.None);
+        }
+
+        private async Task SendWindowUpdateAsync(int streamId, int increment)
+        {
+            var payload = new byte[4];
+            payload[0] = (byte)(increment >> 24);
+            payload[1] = (byte)(increment >> 16);
+            payload[2] = (byte)(increment >> 8);
+            payload[3] = (byte)increment;
+
+            var windowUpdate = new ZeroHttp2Frame
+            {
+                Type = Http2FrameType.WindowUpdate,
+                Flags = 0,
+                StreamId = streamId,
+                Payload = payload
+            };
+
+            await SendFrameAsync(windowUpdate, CancellationToken.None);
         }
 
         internal ZeroHpack Hpack => _hpack;

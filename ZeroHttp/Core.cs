@@ -162,7 +162,26 @@ namespace ZeroHttp
                     var sslStream = new SslStream(stream, false, (sender, cert, chain, errors) =>
                         options.CertificateValidationCallback?.Invoke(sender, cert, chain, errors) ?? (errors == SslPolicyErrors.None));
 
-                    await sslStream.AuthenticateAsClientAsync(host);
+                    if (options.EnableHttp2)
+                    {
+                        var sslOptions = new System.Net.Security.SslClientAuthenticationOptions
+                        {
+                            TargetHost = host,
+                            EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
+                            ApplicationProtocols = new System.Collections.Generic.List<System.Net.Security.SslApplicationProtocol>
+                            {
+                                System.Net.Security.SslApplicationProtocol.Http2,
+                                System.Net.Security.SslApplicationProtocol.Http11
+                            }
+                        };
+
+                        await sslStream.AuthenticateAsClientAsync(sslOptions, cancellationToken);
+                    }
+                    else
+                    {
+                        await sslStream.AuthenticateAsClientAsync(host);
+                    }
+
                     stream = sslStream;
                 }
 
@@ -180,8 +199,11 @@ namespace ZeroHttp
             await _sendSemaphore.WaitAsync(cancellationToken);
             try
             {
-                await WriteRequestAsync(request, cancellationToken);
-                return await ReadResponseAsync(cancellationToken);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(_options.ReceiveTimeout);
+
+                await WriteRequestAsync(request, timeoutCts.Token);
+                return await ReadResponseAsync(timeoutCts.Token);
             }
             finally
             {
@@ -199,8 +221,9 @@ namespace ZeroHttp
                 await WriteRequestAsync(request, cancellationToken);
 
                 var reader = new ZeroStreamReader(_stream);
-                await foreach (var response in reader.ReadStreamingResponsesAsync(cancellationToken))
+                await foreach (var response in reader.ReadStreamingResponsesAsync(cancellationToken).ConfigureAwait(false))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     yield return response;
                 }
             }
@@ -219,8 +242,9 @@ namespace ZeroHttp
                 await WriteRequestAsync(request, cancellationToken);
 
                 var reader = new ZeroStreamReader(_stream);
-                await foreach (var sseEvent in reader.ReadSseEventsAsync(cancellationToken))
+                await foreach (var sseEvent in reader.ReadSseEventsAsync(cancellationToken).ConfigureAwait(false))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     yield return sseEvent;
                 }
             }
@@ -633,6 +657,7 @@ namespace ZeroHttp
         public TimeSpan ConnectionTimeout { get; set; } = TimeSpan.FromMinutes(5);
         public int MaxConnectionsPerHost { get; set; } = 10;
         public Func<object, X509Certificate, X509Chain, SslPolicyErrors, bool> CertificateValidationCallback { get; set; }
+        public bool EnableHttp2 { get; set; } = false;
 
         public static ZeroHttpOptions Default => new ZeroHttpOptions();
     }
